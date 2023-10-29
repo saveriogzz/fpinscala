@@ -136,17 +136,38 @@ case class State[S, +A](run: S => (A, S)) {
   }
 }
 
-sealed trait Input
-case object Coin extends Input
-case object Turn extends Input
-
-case class Machine(locked: Boolean, candies: Int, coins: Int)
-
 object State {
   type Rand[A] = State[RNG, A]
 
   def unit[S, A](a: A): State[S, A] =
     State(s => (a, s))
 
+  def get[S]: State[S, S] = State(s => (s, s))
+  def set[S](s: S): State[S, Unit] = State(_ => ((), s))
+
+  def modify[S](f: S => S): State[S, Unit] = for {
+    s <- get // Gets the current state and assigns it to `s`.
+    _ <- set(f(s)) // Sets the new state to `f` applied to `s`.
+  } yield ()
+}
+
+sealed trait Input
+case object Coin extends Input
+case object Turn extends Input
+
+case class Machine(locked: Boolean, candies: Int, coins: Int)
+
+object VendorMachine {
+  def update: Input => Machine => Machine = (i: Input) =>
+    (s: Machine) =>
+      (i, s) match {
+        case (_, Machine(_, 0, _)) => s
+        case (Coin, Machine(false, _, _)) => s
+        case (Turn, Machine(true, _, _)) => s
+        case (Coin, Machine(true, candies, coins)) =>
+          Machine(false, candies, coins + 1)
+        case (Turn, Machine(false, candies, coins)) =>
+          Machine(true, candies - 1, coins)
+      }
   def simulateMachine(inputs: List[Input]): State[Machine, (Int, Int)] = ???
 }
