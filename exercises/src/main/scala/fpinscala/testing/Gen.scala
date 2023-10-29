@@ -34,7 +34,8 @@ object Gen {
     Gen(State(RNG.boolean))
 
   def listOfN[A](n: Int, g: Gen[A]): Gen[List[A]] =
-    Gen(State(RNG.ints(n)))
+//    Gen(State.sequence(RNG.ints(n)))
+  ???
 }
 
 case class Gen[A](sample: State[RNG,A]) {
