@@ -1,5 +1,9 @@
 package fpinscala.state
 
+import fpinscala.state.State.unit
+
+import scala.annotation.tailrec
+
 trait RNG {
   def nextInt: (
     Int,
@@ -108,6 +112,12 @@ object RNG {
     g(a)(r1)
   }
 
+  def nonNegativeLessThan(n: Int): Rand[Int] =
+    flatMap(nonNegativeInt) { i =>
+      val mod = i % n
+      if (i + (n + 1) - mod >= 0) unit(mod) else nonNegativeLessThan(n)
+    }
+
   def _map[A, B](s: Rand[A])(f: A => B): Rand[B] =
     flatMap(s)(a => unit(f(a)))
 
@@ -117,11 +127,13 @@ object RNG {
 
 case class State[S, +A](run: S => (A, S)) {
   def map[B](f: A => B): State[S, B] =
-    ???
+    flatMap(a => unit(f(a)))
   def map2[B, C](sb: State[S, B])(f: (A, B) => C): State[S, C] =
-    ???
-  def flatMap[B](f: A => State[S, B]): State[S, B] =
-    ???
+    flatMap(a => sb.map(b => f(a, b)))
+  def flatMap[B](f: A => State[S, B]): State[S, B] = State { s =>
+    val (a, s1) = run(s)
+    f(a).run(s1)
+  }
 }
 
 sealed trait Input
