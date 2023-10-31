@@ -1,6 +1,6 @@
 package fpinscala.state
 
-import fpinscala.state.State.unit
+import fpinscala.state.State.{modify, sequence}
 
 import scala.annotation.tailrec
 
@@ -127,7 +127,7 @@ object RNG {
 
 case class State[S, +A](run: S => (A, S)) {
   def map[B](f: A => B): State[S, B] =
-    flatMap(a => unit(f(a)))
+    flatMap(a => State.unit(f(a)))
   def map2[B, C](sb: State[S, B])(f: (A, B) => C): State[S, C] =
     flatMap(a => sb.map(b => f(a, b)))
   def flatMap[B](f: A => State[S, B]): State[S, B] = State { s =>
@@ -142,13 +142,30 @@ object State {
   def unit[S, A](a: A): State[S, A] =
     State(s => (a, s))
 
-  def get[S]: State[S, S] = State(s => (s, s))
-  def set[S](s: S): State[S, Unit] = State(_ => ((), s))
+  def getS[S]: State[S, S] = State(s => (s, s))
+  def setS[S](s: S): State[S, Unit] = State(_ => ((), s))
 
   def modify[S](f: S => S): State[S, Unit] = for {
-    s <- get // Gets the current state and assigns it to `s`.
-    _ <- set(f(s)) // Sets the new state to `f` applied to `s`.
+    s <- getS // Gets the current state and assigns it to `s`.
+    _ <- setS(f(s)) // Sets the new state to `f` applied to `s`.
   } yield ()
+
+  def sequenceViaFoldRight[S, A](sas: List[State[S, A]]): State[S, List[A]] =
+    sas.foldRight(unit[S, List[A]](List[A]()))((a, z) => a.map2(z)(_ :: _))
+
+  def sequenceViaFoldLeft[S, A](sas: List[State[S, A]]): State[S, List[A]] =
+    sas.reverse.foldLeft(unit[S, List[A]](List()))((acc, f) => f.map2(acc)(_ :: _))
+
+  def sequence[S, A](sas: List[State[S, A]]): State[S, List[A]] = {
+    @tailrec
+    def go(s: S, actions: List[State[S, A]], acc: List[A]): (List[A], S) = {
+      actions match {
+        case Nil => (acc.reverse, s)
+        case h :: t => h.run(s) match { case (a, s2) => go(s2, t, a :: acc) }
+      }
+    }
+    State(s => go(s, sas, List()))
+  }
 }
 
 sealed trait Input
@@ -169,5 +186,18 @@ object VendorMachine {
         case (Turn, Machine(false, candies, coins)) =>
           Machine(true, candies - 1, coins)
       }
-  def simulateMachine(inputs: List[Input]): State[Machine, (Int, Int)] = ???
+
+  def simulateMachine(inputs: List[Input]): State[Machine, (Int, Int)] = for {
+    _ <- sequence(inputs map (modify[Machine] _ compose update))
+    s <- State.getS
+  } yield (s.coins, s.candies)
+
+//  When you use modify[Machine] _ compose update,
+  //  you are creating a new function that combines modify[Machine] and update into a single function
+//  , where modify[Machine] is partially applied and waiting
+//  for an Input argument.This composition allows you to apply the update function to the result of modify
+//  [Machine], effectively transforming the state of the vending machine based on the provided input.
+
+  val p = modify[Machine] _
+  val x = update
 }
